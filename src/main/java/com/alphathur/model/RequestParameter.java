@@ -2,6 +2,8 @@ package com.alphathur.model;
 
 import com.alphathur.util.ExcelTitle;
 import com.alphathur.util.Order;
+import java.util.LinkedHashMap;
+import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -30,4 +32,8 @@ public class RequestParameter {
   @Order(5)
   @ExcelTitle("示例")
   private String example;
+
+  @Order(6)
+  @ExcelTitle("对象描述")
+  private LinkedHashMap<String, List<RequestParameter>> restExt = new LinkedHashMap<>();
 }

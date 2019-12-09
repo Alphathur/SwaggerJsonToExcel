@@ -79,7 +79,9 @@ public class RestfulApiGen {
                 }
               } else {
                 //返回单个字段
-                parameters.add(new RequestParameter(null, type, null, false, null));
+                RequestParameter requestParameter = new RequestParameter();
+                requestParameter.setParamType(type);
+                parameters.add(requestParameter);
               }
             }
           } else { //get请求或者post+form提交
@@ -88,8 +90,12 @@ public class RestfulApiGen {
             Boolean required = param.getBoolean("required");
             String description = param.getString("description");
             String example = param.getString("example");
-            RequestParameter parameter = new RequestParameter(name, type, description, required,
-                example);
+            RequestParameter parameter = new RequestParameter();
+            parameter.setParam(name);
+            parameter.setParamType(type);
+            parameter.setRequired(required);
+            parameter.setParamZh(description);
+            parameter.setExample(example);
             parameters.add(parameter);
           }
         }
@@ -160,13 +166,21 @@ public class RestfulApiGen {
           ExportExcelUtil.writeDataList(sheet, apiUnit.buildParamList());
         }
 
+        List<Object[]> restExtDatas = apiUnit.buildExtParamList(apiUnit.getParameters());
+        if (!restExtDatas.isEmpty()) {
+          ExportExcelUtil.writeDataList(sheet, restExtDatas);
+        }
+
         ExportExcelUtil.writeOneData(sheet, respTitle);
         if (apiUnit.getResponses().isEmpty()) {
           ExportExcelUtil.writeStringLine(sheet, "无");
         } else {
           ExportExcelUtil.writeDataList(sheet, apiUnit.buildRespList());
         }
-
+        List<Object[]> respExtDatas = apiUnit.buildExtRespList(apiUnit.getResponses());
+        if (!respExtDatas.isEmpty()) {
+          ExportExcelUtil.writeDataList(sheet, respExtDatas);
+        }
         ExportExcelUtil.writeEmptyLine(sheet);
       }
     });
@@ -178,13 +192,26 @@ public class RestfulApiGen {
   private static List<Response> buildResponse(String ref, JSONObject definitions) {
     List<Response> responses = new ArrayList<>();
     JSONObject refJson = definitions.getJSONObject(ref);
+
     if (refJson != null && !refJson.isEmpty()) {
       JSONObject properties = refJson.getJSONObject("properties");
+      if (properties == null) {
+        return responses;
+      }
       for (String property : properties.keySet()) {
         Response response = new Response();
         response.setResponse(property);
         JSONObject proJson = properties.getJSONObject(property);
-        response.setResponseType(proJson.getString("type"));
+        if (proJson.containsKey("ref")) {
+          response.setResponseType("object");
+          String currentRef = proJson.getString("ref");
+          String objRef = currentRef.substring(currentRef.lastIndexOf("/") + 1);
+          if (!objRef.equals(ref)) {
+            setRespExtMapValue(response, objRef, definitions);
+          }
+        } else {
+          response.setResponseType(proJson.getString("type"));
+        }
         response.setResponseZh(proJson.getString("description"));
         responses.add(response);
       }
@@ -197,11 +224,24 @@ public class RestfulApiGen {
     JSONObject refJson = definitions.getJSONObject(ref);
     if (refJson != null && !refJson.isEmpty()) {
       JSONObject properties = refJson.getJSONObject("properties");
+      if (properties == null) {
+        return requestParameters;
+      }
       for (String property : properties.keySet()) {
         RequestParameter requestParameter = new RequestParameter();
         requestParameter.setParam(property);
         JSONObject proJson = properties.getJSONObject(property);
         requestParameter.setParamType(proJson.getString("type"));
+        if (proJson.containsKey("ref")) {
+          requestParameter.setParamType("object");
+          String currentRef = proJson.getString("ref");
+          String objRef = currentRef.substring(currentRef.lastIndexOf("/") + 1);
+          if (!objRef.equals(ref)) {
+            setRestExtMapValue(requestParameter, objRef, definitions);
+          }
+        } else {
+          requestParameter.setParamType(proJson.getString("type"));
+        }
         requestParameter.setParamZh(proJson.getString("description"));
         requestParameter.setExample(proJson.getString("example"));
         requestParameter.setRequired(proJson.getBoolean("required"));
@@ -210,6 +250,15 @@ public class RestfulApiGen {
 
     }
     return requestParameters;
+  }
+
+  private static void setRespExtMapValue(Response response, String ref, JSONObject definitions) {
+    response.getRespExt().put(response.getResponse(), buildResponse(ref, definitions));
+  }
+
+  private static void setRestExtMapValue(RequestParameter requestParameter, String ref,
+      JSONObject definitions) {
+    requestParameter.getRestExt().put(requestParameter.getParam(), buildRequest(ref, definitions));
   }
 
 
