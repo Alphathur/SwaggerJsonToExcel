@@ -167,9 +167,9 @@ public class RestfulApiGenerator {
   }
 
   private List<RestApiUnit> genDocUnit(String jsonText) {
-
+    //since fastjson is unable to read a key started with character '$', so remove this character
     JSONObject jsonObject = JSONObject
-        .parseObject(jsonText.replace("$", "")); //解决fastjson无法读取$开头的key
+        .parseObject(jsonText.replace("$", ""));
 
     JSONObject paths = jsonObject.getJSONObject("paths");
     Set<String> urlSet = paths.keySet();
