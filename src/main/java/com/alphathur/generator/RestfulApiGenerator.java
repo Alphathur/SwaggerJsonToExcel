@@ -7,9 +7,13 @@ import com.alphathur.model.RequestParameter;
 import com.alphathur.model.Response;
 import com.alphathur.model.RestApiUnit;
 import com.alphathur.util.ExportExcelUtil;
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.List;
@@ -20,13 +24,152 @@ import org.apache.commons.io.IOUtils;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 
-public class RestfulApiGen {
+public class RestfulApiGenerator {
 
-  private static List<RestApiUnit> genDocUnit(String fileName) throws IOException {
-    String text = IOUtils
-        .toString(new FileInputStream(new File(fileName)), Charset.forName("UTF-8"));
+  /**
+   * url represent swagger api-docs remote url
+   */
+  private URL url;
 
-    JSONObject jsonObject = JSONObject.parseObject(text.replace("$", "")); //解决fastjson无法读取$开头的key
+  /**
+   * jsonFile represent the swagger json file's absolute path
+   */
+  private String jsonFile;
+
+  /**
+   * excelFile represent the output file's absolute path
+   */
+  private String excelFile;
+
+  /**
+   * sheetName represent the output sheet in excel
+   */
+  private String sheetName;
+
+  public RestfulApiGenerator(URL url, String excelFile, String sheetName) {
+    this.url = url;
+    this.excelFile = excelFile;
+    this.sheetName = sheetName;
+  }
+
+  public RestfulApiGenerator(String jsonFile, String excelFile, String sheetName) {
+    this.jsonFile = jsonFile;
+    this.excelFile = excelFile;
+    this.sheetName = sheetName;
+  }
+
+  private static List<Response> buildResponse(String ref, JSONObject definitions) {
+    List<Response> responses = new ArrayList<>();
+    JSONObject refJson = definitions.getJSONObject(ref);
+
+    if (refJson != null && !refJson.isEmpty()) {
+      JSONObject properties = refJson.getJSONObject("properties");
+      if (properties == null) {
+        return responses;
+      }
+      for (String property : properties.keySet()) {
+        Response response = new Response();
+        response.setResponse(property);
+        JSONObject proJson = properties.getJSONObject(property);
+        if (proJson.containsKey("ref")) {
+          response.setResponseType("object");
+          String currentRef = proJson.getString("ref");
+          String objRef = currentRef.substring(currentRef.lastIndexOf("/") + 1);
+          if (!objRef.equals(ref)) {
+            setRespExtMapValue(response, objRef, definitions);
+          }
+        } else {
+          response.setResponseType(proJson.getString("type"));
+        }
+        response.setResponseZh(proJson.getString("description"));
+        responses.add(response);
+      }
+    }
+    return responses;
+  }
+
+  private static List<RequestParameter> buildRequest(String ref, JSONObject definitions) {
+    List<RequestParameter> requestParameters = new ArrayList<>();
+    JSONObject refJson = definitions.getJSONObject(ref);
+    if (refJson != null && !refJson.isEmpty()) {
+      JSONObject properties = refJson.getJSONObject("properties");
+      if (properties == null) {
+        return requestParameters;
+      }
+      for (String property : properties.keySet()) {
+        RequestParameter requestParameter = new RequestParameter();
+        requestParameter.setParam(property);
+        JSONObject proJson = properties.getJSONObject(property);
+        requestParameter.setParamType(proJson.getString("type"));
+        if (proJson.containsKey("ref")) {
+          requestParameter.setParamType("object");
+          String currentRef = proJson.getString("ref");
+          String objRef = currentRef.substring(currentRef.lastIndexOf("/") + 1);
+          if (!objRef.equals(ref)) {
+            setRestExtMapValue(requestParameter, objRef, definitions);
+          }
+        } else {
+          requestParameter.setParamType(proJson.getString("type"));
+        }
+        requestParameter.setParamZh(proJson.getString("description"));
+        requestParameter.setExample(proJson.getString("example"));
+        requestParameter.setRequired(proJson.getBoolean("required"));
+        requestParameters.add(requestParameter);
+      }
+
+    }
+    return requestParameters;
+  }
+
+  private static void setRespExtMapValue(Response response, String ref, JSONObject definitions) {
+    response.getRespExt().put(response.getResponse(), buildResponse(ref, definitions));
+  }
+
+  private static void setRestExtMapValue(RequestParameter requestParameter, String ref,
+      JSONObject definitions) {
+    requestParameter.getRestExt().put(requestParameter.getParam(), buildRequest(ref, definitions));
+  }
+
+  private static String getRequestMethod(JSONObject currentPath) {
+    if (currentPath == null || currentPath.keySet().isEmpty()) {
+      return null;
+    }
+    return currentPath.keySet().iterator().next();
+  }
+
+  public void genRestfulExcel() throws IOException {
+    String jsonText = getOriginJson();
+    List<RestApiUnit> restApiUnits = genDocUnit(jsonText);
+    writeToExcel(restApiUnits);
+  }
+
+  private String getOriginJson() throws IOException {
+    if (jsonFile != null) {
+      return IOUtils
+          .toString(new FileInputStream(new File(jsonFile)), Charset.forName("UTF-8"));
+    }
+    HttpURLConnection con = (HttpURLConnection) url.openConnection();
+    con.setRequestMethod("GET");
+    int status = con.getResponseCode();
+    if (status != 200) {
+      throw new RuntimeException("connect error");
+    }
+    BufferedReader in = new BufferedReader(
+        new InputStreamReader(con.getInputStream()));
+    String inputLine;
+    StringBuilder content = new StringBuilder();
+    while ((inputLine = in.readLine()) != null) {
+      content.append(inputLine);
+    }
+    in.close();
+    con.disconnect();
+    return content.toString();
+  }
+
+  private List<RestApiUnit> genDocUnit(String jsonText) {
+
+    JSONObject jsonObject = JSONObject
+        .parseObject(jsonText.replace("$", "")); //解决fastjson无法读取$开头的key
 
     JSONObject paths = jsonObject.getJSONObject("paths");
     Set<String> urlSet = paths.keySet();
@@ -137,15 +280,12 @@ public class RestfulApiGen {
     return apiUnits;
   }
 
-  public static void genRestfulExcel(String jsonFileName, String excelFileName, String sheetName)
-      throws IOException {
-
-    List<RestApiUnit> restApiUnits = genDocUnit(jsonFileName);
+  private void writeToExcel(List<RestApiUnit> restApiUnits) {
 
     Map<String, List<RestApiUnit>> apiGroupMap = restApiUnits.stream()
         .collect(Collectors.groupingBy(RestApiUnit::getTag));
 
-    Workbook workbook = ExportExcelUtil.getWorkBook(excelFileName);
+    Workbook workbook = ExportExcelUtil.getWorkBook(excelFile);
 
     Sheet sheet = ExportExcelUtil.getOrBuildSheet(workbook, sheetName);
 
@@ -185,87 +325,7 @@ public class RestfulApiGen {
       }
     });
 
-    ExportExcelUtil.persistToFile(workbook, excelFileName);
+    ExportExcelUtil.persistToFile(workbook, excelFile);
   }
 
-
-  private static List<Response> buildResponse(String ref, JSONObject definitions) {
-    List<Response> responses = new ArrayList<>();
-    JSONObject refJson = definitions.getJSONObject(ref);
-
-    if (refJson != null && !refJson.isEmpty()) {
-      JSONObject properties = refJson.getJSONObject("properties");
-      if (properties == null) {
-        return responses;
-      }
-      for (String property : properties.keySet()) {
-        Response response = new Response();
-        response.setResponse(property);
-        JSONObject proJson = properties.getJSONObject(property);
-        if (proJson.containsKey("ref")) {
-          response.setResponseType("object");
-          String currentRef = proJson.getString("ref");
-          String objRef = currentRef.substring(currentRef.lastIndexOf("/") + 1);
-          if (!objRef.equals(ref)) {
-            setRespExtMapValue(response, objRef, definitions);
-          }
-        } else {
-          response.setResponseType(proJson.getString("type"));
-        }
-        response.setResponseZh(proJson.getString("description"));
-        responses.add(response);
-      }
-    }
-    return responses;
-  }
-
-  private static List<RequestParameter> buildRequest(String ref, JSONObject definitions) {
-    List<RequestParameter> requestParameters = new ArrayList<>();
-    JSONObject refJson = definitions.getJSONObject(ref);
-    if (refJson != null && !refJson.isEmpty()) {
-      JSONObject properties = refJson.getJSONObject("properties");
-      if (properties == null) {
-        return requestParameters;
-      }
-      for (String property : properties.keySet()) {
-        RequestParameter requestParameter = new RequestParameter();
-        requestParameter.setParam(property);
-        JSONObject proJson = properties.getJSONObject(property);
-        requestParameter.setParamType(proJson.getString("type"));
-        if (proJson.containsKey("ref")) {
-          requestParameter.setParamType("object");
-          String currentRef = proJson.getString("ref");
-          String objRef = currentRef.substring(currentRef.lastIndexOf("/") + 1);
-          if (!objRef.equals(ref)) {
-            setRestExtMapValue(requestParameter, objRef, definitions);
-          }
-        } else {
-          requestParameter.setParamType(proJson.getString("type"));
-        }
-        requestParameter.setParamZh(proJson.getString("description"));
-        requestParameter.setExample(proJson.getString("example"));
-        requestParameter.setRequired(proJson.getBoolean("required"));
-        requestParameters.add(requestParameter);
-      }
-
-    }
-    return requestParameters;
-  }
-
-  private static void setRespExtMapValue(Response response, String ref, JSONObject definitions) {
-    response.getRespExt().put(response.getResponse(), buildResponse(ref, definitions));
-  }
-
-  private static void setRestExtMapValue(RequestParameter requestParameter, String ref,
-      JSONObject definitions) {
-    requestParameter.getRestExt().put(requestParameter.getParam(), buildRequest(ref, definitions));
-  }
-
-
-  private static String getRequestMethod(JSONObject currentPath) {
-    if (currentPath == null || currentPath.keySet().isEmpty()) {
-      return null;
-    }
-    return currentPath.keySet().iterator().next();
-  }
 }
