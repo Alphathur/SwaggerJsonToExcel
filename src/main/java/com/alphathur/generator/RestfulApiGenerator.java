@@ -78,6 +78,14 @@ public class RestfulApiGenerator {
           if (!objRef.equals(ref)) {
             setRespExtMapValue(response, objRef, definitions);
           }
+        } else if ("array".equals(proJson.getString("type")) && proJson.containsKey("items")
+            && proJson.getJSONObject("items").getString("ref") != null) {
+          response.setResponseType("object");
+          String currentRef = proJson.getJSONObject("items").getString("ref");
+          String objRef = currentRef.substring(currentRef.lastIndexOf("/") + 1);
+          if (!objRef.equals(ref)) {
+            setRespExtMapValue(response, objRef, definitions);
+          }
         } else {
           response.setResponseType(proJson.getString("type"));
         }
@@ -143,7 +151,7 @@ public class RestfulApiGenerator {
     writeToExcel(restApiUnits);
   }
 
-  private String getOriginJson() throws IOException {
+  public String getOriginJson() throws IOException {
     if (jsonFile != null) {
       return IOUtils
           .toString(new FileInputStream(new File(jsonFile)), Charset.forName("UTF-8"));
@@ -166,7 +174,7 @@ public class RestfulApiGenerator {
     return content.toString();
   }
 
-  private List<RestApiUnit> genDocUnit(String jsonText) {
+  public List<RestApiUnit> genDocUnit(String jsonText) {
     //since fastjson is unable to read a key started with character '$', so remove this character
     JSONObject jsonObject = JSONObject
         .parseObject(jsonText.replace("$", ""));
