@@ -2,6 +2,7 @@ package com.alphathur.generator;
 
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson.parser.Feature;
 import com.alphathur.model.RequestHeader;
 import com.alphathur.model.RequestParameter;
 import com.alphathur.model.Response;
@@ -177,7 +178,7 @@ public class RestfulApiGenerator {
   public List<RestApiUnit> genDocUnit(String jsonText) {
     //since fastjson is unable to read a key started with character '$', so remove this character
     JSONObject jsonObject = JSONObject
-        .parseObject(jsonText.replace("$", ""));
+        .parseObject(jsonText.replace("$", ""), Feature.OrderedField);
 
     JSONObject paths = jsonObject.getJSONObject("paths");
     Set<String> urlSet = paths.keySet();
