@@ -48,7 +48,7 @@
     <dependency>
       <artifactId>poi-ooxml</artifactId>
       <groupId>org.apache.poi</groupId>
-      <version>3.17</version>
+      <version>5.4.0</version>
     </dependency>
   </dependencies>
   <groupId>com.alphathur</groupId>
